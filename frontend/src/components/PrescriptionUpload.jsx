@@ -24,7 +24,15 @@ export default function PrescriptionUpload({ onPrescriptionVerified }) {
 
     try {
       const res = await uploadPrescription(file);
-      setExtractedData(res.data);
+      // Preserve the original extractedMedications for the verification modal
+      const payload = {
+        ...res.data,
+        // extractedMedications come from the DB record for compatibility with existing modal
+        extractedMedications: res.data._dbRecord?.extractedMedications || [],
+        // ensure prescriptionId is available at top level
+        prescriptionId: res.data.prescriptionId,
+      };
+      setExtractedData(payload);
       if (res.data?.imageUrl) setPreviewUrl(res.data.imageUrl);
       setIsModalOpen(true);
     } catch (err) {

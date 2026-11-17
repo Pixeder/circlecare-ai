@@ -104,10 +104,40 @@ router.post('/upload', authenticateToken, upload.single('image'), async (req, re
       await Prescription.create(recordData);
     }
 
+    // ------------ New: Shape response per required schema ------------
+    const responseData = {
+      prescriptionId: recordData.prescriptionId,
+      imageUrl: recordData.imageUrl,
+      doctor_name: recordData.doctorName,
+      clinic_name: recordData.clinicName,
+      prescription_date: recordData.prescribedDate
+        ? recordData.prescribedDate.toISOString().split('T')[0]
+        : null,
+      patient_name: null, // could be populated from patient profile if needed
+      medications: extracted.extractedMedications.map((med) => ({
+        medicine_name: med.name,
+        strength: med.dosage?.split(' ')[0] || null,
+        dosage: med.dosage,
+        frequency: med.frequency,
+        duration: med.duration,
+        instructions: med.instructions,
+        confidence: med.confidence,
+        uncertain_fields: med.uncertain ? ['medicine_name', 'dosage', 'frequency', 'duration'] : [],
+      })),
+      additional_notes: [],
+      allergies: [],
+      requires_human_verification: true,
+      _raw: {
+        rawExtractedText: extracted.rawExtractedText,
+        uncertainFields: extracted.uncertainFields,
+      },
+    };
+
     res.json({
       success: true,
       message: 'Prescription uploaded and analyzed. Human verification required before medications are saved.',
-      data: recordData,
+      data: responseData,
+      _dbRecord: recordData,
     });
   } catch (error) {
     next(error);
