@@ -12,10 +12,7 @@ import {
 
 const AuthContext = createContext(null);
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-if (!API_BASE && import.meta.env.PROD) {
-  console.error('[AuthContext] VITE_API_BASE_URL is not set in production!');
-}
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://circlecare-ai.onrender.com/api';
 
 
 export function AuthProvider({ children }) {
@@ -49,6 +46,14 @@ export function AuthProvider({ children }) {
       }
 
       const res = await fetch(`${API_BASE}/auth/me`, { headers });
+
+      // Guard against HTML responses (e.g. when the request hits the frontend's own static server)
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        console.warn('[AuthContext] /auth/me returned non-JSON (content-type:', contentType, ')');
+        return null;
+      }
+
       if (!res.ok) {
         if (res.status === 401) {
           saveToken(null);
@@ -362,6 +367,15 @@ export function AuthProvider({ children }) {
       },
       body: JSON.stringify(patientData),
     });
+
+    // Guard against HTML responses (e.g. static-site fallback returning index.html)
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      console.error('[AuthContext] /auth/patient-profile returned non-JSON. API_BASE =', API_BASE);
+      throw new Error(
+        'Cannot reach the backend API. Please verify VITE_API_BASE_URL is set correctly.'
+      );
+    }
 
     if (!res.ok) {
       const err = await res.json();
