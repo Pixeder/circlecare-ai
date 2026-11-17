@@ -85,3 +85,23 @@ export const config = {
     devBypassAuth: process.env.DEV_BYPASS_AUTH === 'true',
   },
 };
+
+// Production environment validation – ensure all required secrets are set
+if (config.nodeEnv === 'production') {
+  const required = [
+    { key: 'FIREBASE_PROJECT_ID', val: config.firebase.projectId },
+    { key: 'FIREBASE_CLIENT_EMAIL', val: config.firebase.clientEmail },
+    { key: 'FIREBASE_PRIVATE_KEY', val: config.firebase.privateKey },
+    { key: 'CLOUDINARY_CLOUD_NAME', val: config.cloudinary.cloudName },
+    { key: 'CLOUDINARY_API_KEY', val: config.cloudinary.apiKey },
+    { key: 'CLOUDINARY_API_SECRET', val: config.cloudinary.apiSecret },
+    { key: 'NVIDIA_NIM_API_KEY', val: config.nvidia.apiKey },
+    { key: 'MONGODB_URI', val: config.mongodb.uri },
+  ];
+  const missing = required.filter(e => !e.val || e.val.trim() === '');
+  if (missing.length) {
+    console.error('[Config] Missing required environment variables for production:', missing.map(e => e.key).join(', '));
+    process.exit(1);
+  }
+}
+
