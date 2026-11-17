@@ -1,0 +1,11 @@
+{
+  "name": "carecircle-ai",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node backend/src/tests/agentOrchestrator.test.js",
+    "test:audit": "node backend/src/tests/milestone1Audit.test.js",
+    "start:backend": "node backend/server.js",
+    "start:frontend": "cd frontend && npm run dev"
+  }
+}
