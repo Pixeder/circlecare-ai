@@ -1,5 +1,6 @@
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef } from 'react';
 import { Upload, FileText, CheckCircle, AlertCircle, Eye, Image as ImageIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { uploadPrescription } from '../services/api';
 import VerificationModal from './VerificationModal';
 
@@ -71,11 +72,7 @@ export default function PrescriptionUpload({ onPrescriptionVerified }) {
     setIsModalOpen(false);
     navigate('/');
   };
-    setSuccessBanner(
-      `Prescription #${res.data?.prescriptionId} verified! Added ${res.data?.savedMedicationsCount} medications to active schedule & indexed into Qdrant medical memory.`
-    );
-    if (onPrescriptionVerified) onPrescriptionVerified();
-  };
+
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
