@@ -67,7 +67,7 @@ export async function callNvidiaMistral({
       payload.response_format = responseFormat;
     }
 
-    const response = await client.chat.completions.create(payload, { timeout: 25000 });
+    const response = await client.chat.completions.create(payload, { timeout: 45000 });
     return response.choices[0].message;
   } catch (error) {
     console.error(`[NVIDIA NIM Error] ${error.message}`);

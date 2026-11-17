@@ -22,7 +22,7 @@ export async function connectMongoDB() {
 
   try {
     const conn = await mongoose.connect(config.mongodb.uri, {
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
     });
     isConnected = true;
     console.log(`[MongoDB] Connected successfully to: ${conn.connection.host}`);

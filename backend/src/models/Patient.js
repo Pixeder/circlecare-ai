@@ -6,10 +6,11 @@ if (mongoose) {
   const PatientSchema = new mongoose.Schema(
     {
       patientId: { type: String, required: true, unique: true, index: true },
-      name: { type: String, required: true },
-      age: { type: Number },
-      gender: { type: String },
-      phone: { type: String },
+      userId: { type: String, required: true, index: true }, // Owner Firebase UID
+      name: { type: String, required: true, trim: true },
+      dateOfBirth: { type: String, default: '' },
+      gender: { type: String, default: '' },
+      phone: { type: String, default: '' },
       emergencyContacts: [
         {
           name: { type: String, required: true },
@@ -18,10 +19,16 @@ if (mongoose) {
           isPrimary: { type: Boolean, default: false },
         },
       ],
-      authorizedCaregivers: [{ type: String }],
+      authorizedCaregivers: [{ type: String }], // Array of caregiver Firebase UIDs / emails
       allergies: [{ type: String }],
       chronicConditions: [{ type: String }],
       preferredLanguage: { type: String, default: 'English' },
+      medicalProfile: {
+        bloodType: { type: String, default: 'Unknown' },
+        heightCm: { type: Number, default: null },
+        weightKg: { type: Number, default: null },
+        notes: { type: String, default: '' },
+      },
     },
     { timestamps: true }
   );
@@ -32,6 +39,8 @@ if (mongoose) {
     findOne: async () => null,
     find: async () => [],
     create: async (d) => ({ ...d, _id: `patient_${Date.now()}` }),
+    findOneAndUpdate: async () => null,
+    deleteOne: async () => null,
   };
 }
 

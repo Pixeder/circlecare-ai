@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import ProtectedRoute from './components/auth/ProtectedRoute';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
 import OverviewDashboard from './components/OverviewDashboard';
@@ -11,15 +13,21 @@ import FamilyCareSection from './components/FamilyCareSection';
 import EmergencySection from './components/EmergencySection';
 import SettingsSection from './components/SettingsSection';
 import EmergencySOS from './components/EmergencySOS';
+import OnboardingModal from './components/OnboardingModal';
 
-export default function App() {
+function MainApp() {
+  const { user, patientProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [isEmergencyOpen, setIsEmergencyOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const handleRefresh = () => {
     setRefreshTrigger((prev) => prev + 1);
   };
+
+  // If user has no patient profile yet, open onboarding modal
+  const needsOnboarding = user && !patientProfile && !isOnboardingOpen;
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans">
@@ -27,18 +35,13 @@ export default function App() {
       <Header
         onOpenEmergency={() => setIsEmergencyOpen(true)}
         onSelectTab={(tab) => setActiveTab(tab)}
+        onOpenOnboarding={() => setIsOnboardingOpen(true)}
       />
 
       {/* Main 9-Tab Navigation Bar */}
       <Navigation
         activeTab={activeTab}
         onSelectTab={(tab) => setActiveTab(tab)}
-        counts={{
-          prescriptions: 2,
-          appointments: 2,
-          caregivers: 3,
-          lowStock: 1,
-        }}
       />
 
       {/* Main Content Area */}
@@ -48,6 +51,7 @@ export default function App() {
             onNavigate={(tab) => setActiveTab(tab)}
             onOpenEmergency={() => setIsEmergencyOpen(true)}
             onRefreshNeeded={refreshTrigger}
+            onOpenOnboarding={() => setIsOnboardingOpen(true)}
           />
         )}
 
@@ -97,10 +101,26 @@ export default function App() {
         onClose={() => setIsEmergencyOpen(false)}
       />
 
+      {/* Onboarding Modal for New Accounts */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen || needsOnboarding}
+        onClose={() => setIsOnboardingOpen(false)}
+      />
+
       {/* Accessible Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
-        CareCircle AI • Elderly Healthcare & Family Circle Agent Platform • Powered by NVIDIA NIM Mistral Large, MongoDB Atlas & Qdrant RAG
+        CareCircle AI • Real Firebase Authentication & MongoDB Dynamic Persistence • Powered by NVIDIA NIM Mistral Large & Qdrant RAG
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ProtectedRoute>
+        <MainApp />
+      </ProtectedRoute>
+    </AuthProvider>
   );
 }

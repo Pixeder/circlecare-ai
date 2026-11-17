@@ -28,6 +28,7 @@ try {
   app.use(express.urlencoded({ extended: true }));
 
   // Import routes
+  const authRoutes = (await import('./src/routes/auth.routes.js')).default;
   const healthRoutes = (await import('./src/routes/health.routes.js')).default;
   const agentRoutes = (await import('./src/routes/agent.routes.js')).default;
   const prescriptionRoutes = (await import('./src/routes/prescription.routes.js')).default;
@@ -38,6 +39,7 @@ try {
   const emergencyRoutes = (await import('./src/routes/emergency.routes.js')).default;
   const patientRoutes = (await import('./src/routes/patient.routes.js')).default;
 
+  app.use('/api/auth', authRoutes);
   app.use('/api/health', healthRoutes);
   app.use('/api/agent', agentRoutes);
   app.use('/api/prescriptions', prescriptionRoutes);
@@ -246,7 +248,9 @@ async function startServer() {
   console.log('--- Initializing CareCircle AI Healthcare Platform ---');
 
   await connectMongoDB();
-  await seedSampleDataIfEmpty();
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    await seedSampleDataIfEmpty();
+  }
   await initQdrantCollection();
   initFirebase();
 

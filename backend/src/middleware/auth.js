@@ -1,66 +1,120 @@
 import { verifyFirebaseToken } from '../config/firebase.js';
-import { config } from '../config/env.js';
+import { User } from '../models/User.js';
+import { Patient } from '../models/Patient.js';
+import { Caregiver } from '../models/Caregiver.js';
+import { isMongoConnected } from '../config/mongodb.js';
 
 export async function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Authorization header missing or malformed.',
+    });
+  }
+
   try {
-    if (!token && !config.firebase.devBypassAuth) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication token missing or invalid.',
-      });
+    const decoded = await verifyFirebaseToken(token);
+
+    // Sync or lookup user record in MongoDB
+    let userDoc = null;
+    if (isMongoConnected()) {
+      userDoc = await User.findOneAndUpdate(
+        { firebaseUid: decoded.uid },
+        {
+          $set: {
+            email: decoded.email,
+            displayName: decoded.name,
+            lastLoginAt: new Date(),
+          },
+          $setOnInsert: {
+            role: decoded.role || 'patient',
+          },
+        },
+        { upsert: true, new: true }
+      );
     }
 
-    const decoded = await verifyFirebaseToken(token || 'mock-token');
+    // Determine target patient context
+    const requestedPatientId = req.headers['x-patient-id'] || req.query.patientId;
+    let activePatientId = null;
 
-    // Ensure patientId is assigned (defaulting to uid if user is patient, or query/header if caregiver)
-    const patientId = req.headers['x-patient-id'] || req.query.patientId || decoded.patientId || decoded.uid;
+    if (isMongoConnected()) {
+      if (requestedPatientId) {
+        // Enforce patient-level authorization: User must own the patient OR be an authorized caregiver
+        const ownedPatient = await Patient.findOne({ patientId: requestedPatientId, userId: decoded.uid });
+
+        if (ownedPatient) {
+          activePatientId = ownedPatient.patientId;
+        } else {
+          // Check caregiver access table
+          const caregiverRecord = await Caregiver.findOne({
+            patientId: requestedPatientId,
+            $or: [{ caregiverUid: decoded.uid }, { caregiverEmail: decoded.email?.toLowerCase() }],
+            invitationStatus: 'accepted',
+          });
+
+          if (caregiverRecord) {
+            activePatientId = requestedPatientId;
+          } else {
+            return res.status(403).json({
+              success: false,
+              error: `Access Denied: You do not have authorized access to patient profile: ${requestedPatientId}`,
+            });
+          }
+        }
+      } else {
+        // Default to the patient owned by the user
+        const ownedPatient = await Patient.findOne({ userId: decoded.uid });
+        if (ownedPatient) {
+          activePatientId = ownedPatient.patientId;
+        } else {
+          // Fallback: check if authorized for any patient as caregiver
+          const caregiverRecord = await Caregiver.findOne({
+            $or: [{ caregiverUid: decoded.uid }, { caregiverEmail: decoded.email?.toLowerCase() }],
+            invitationStatus: 'accepted',
+          });
+          if (caregiverRecord) {
+            activePatientId = caregiverRecord.patientId;
+          }
+        }
+      }
+    } else {
+      activePatientId = requestedPatientId || `patient_${decoded.uid}`;
+    }
 
     req.user = {
-      ...decoded,
-      activePatientId: patientId,
+      uid: decoded.uid,
+      email: decoded.email,
+      name: userDoc?.displayName || decoded.name || 'User',
+      role: userDoc?.role || decoded.role || 'patient',
+      activePatientId,
     };
 
     next();
   } catch (error) {
-    console.error(`[Auth Middleware] Verification failed: ${error.message}`);
-    return res.status(403).json({
+    const isExpired = error.code === 'auth/id-token-expired' || error.message?.includes('expired');
+    return res.status(401).json({
       success: false,
-      error: 'Unauthorized. Invalid or expired authentication token.',
+      error: isExpired ? 'Authentication token has expired. Please log in again.' : 'Invalid authentication token.',
     });
   }
 }
 
 /**
- * Middleware ensuring caregivers or users have access to the target patient
+ * Strict route guard checking that a valid patient profile is active
  */
-export function authorizePatientAccess(req, res, next) {
-  const user = req.user;
-  const targetPatientId = req.params.patientId || req.body.patientId || req.user.activePatientId;
-
-  if (!user) {
-    return res.status(401).json({ success: false, error: 'Unauthorized.' });
+export function requireActivePatient(req, res, next) {
+  if (!req.user || !req.user.activePatientId) {
+    return res.status(400).json({
+      success: false,
+      error: 'No active patient profile found for this account. Please create or select a patient profile first.',
+      requiresPatientProfile: true,
+    });
   }
-
-  // If user is the patient themselves
-  if (user.uid === targetPatientId || user.patientId === targetPatientId) {
-    return next();
-  }
-
-  // If user is an authorized caregiver
-  if (user.role === 'caregiver' && user.authorizedCaregivers?.includes(targetPatientId)) {
-    return next();
-  }
-
-  // In development bypass mode, permit access
-  if (config.firebase.devBypassAuth) {
-    return next();
-  }
-
-  return res.status(403).json({
-    success: false,
-    error: `Access denied. You do not have authorized access to patient profile: ${targetPatientId}`,
-  });
+  next();
 }
+
+export default { authenticateToken, requireActivePatient };

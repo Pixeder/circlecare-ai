@@ -9,44 +9,81 @@ const router = express.Router();
 
 let activeEmergencyState = null;
 
-const defaultContacts = [
-  { id: 'ec_01', name: 'Sarah Vance', phone: '+1-555-0192', relationship: 'Daughter (Primary)', isPrimary: true },
-  { id: 'ec_02', name: 'Dr. Robert Miller', phone: '+1-555-0144', relationship: 'Primary Physician', isPrimary: false },
-  { id: 'ec_03', name: 'City Geriatric Emergency Dispatch', phone: '911', relationship: 'EMS Services', isPrimary: false },
-];
-
 // GET /api/emergency/contacts
 router.get('/contacts', authenticateToken, async (req, res, next) => {
   try {
     const patientId = req.user.activePatientId;
-
-    if (isMongoConnected()) {
-      const patient = await Patient.findOne({ patientId }).lean();
-      if (patient?.emergencyContacts?.length > 0) {
-        return res.json({ success: true, count: patient.emergencyContacts.length, contacts: patient.emergencyContacts });
-      }
+    if (!patientId || !isMongoConnected()) {
+      return res.json({ success: true, count: 0, contacts: [], activeEmergency: activeEmergencyState });
     }
 
-    res.json({ success: true, count: defaultContacts.length, contacts: defaultContacts, activeEmergency: activeEmergencyState });
+    const patient = await Patient.findOne({ patientId }).lean();
+    const contacts = patient?.emergencyContacts || [];
+    res.json({ success: true, count: contacts.length, contacts, activeEmergency: activeEmergencyState });
   } catch (error) {
     next(error);
   }
 });
 
-// POST /api/emergency/sos - Immediate deterministic SOS
+// POST /api/emergency/contacts
+router.post('/contacts', authenticateToken, async (req, res, next) => {
+  try {
+    const patientId = req.user.activePatientId;
+    const { name, phone, relationship, isPrimary } = req.body;
+
+    if (!patientId || !isMongoConnected()) {
+      return res.status(400).json({ success: false, error: 'No active patient profile selected.' });
+    }
+
+    if (!name || !phone) {
+      return res.status(400).json({ success: false, error: 'Contact name and phone are required.' });
+    }
+
+    const updated = await Patient.findOneAndUpdate(
+      { patientId },
+      {
+        $push: {
+          emergencyContacts: {
+            name: name.trim(),
+            phone: phone.trim(),
+            relationship: relationship || 'Family',
+            isPrimary: Boolean(isPrimary),
+          },
+        },
+      },
+      { new: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Emergency contact added successfully.',
+      contacts: updated?.emergencyContacts || [],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/emergency/sos - Deterministic emergency SOS
 router.post('/sos', authenticateToken, async (req, res, next) => {
   try {
-    const context = { patientId: req.user.activePatientId, user: req.user };
+    const patientId = req.user.activePatientId;
+    if (!patientId) {
+      return res.status(400).json({ success: false, error: 'No active patient profile selected.' });
+    }
+
+    const context = { patientId, user: req.user };
     const { reason = 'Emergency SOS triggered from dashboard', urgency = 'critical' } = req.body;
 
     const result = await triggerSosTool.execute({ context, args: { reason, urgency } });
 
     activeEmergencyState = {
       triggeredAt: new Date().toISOString(),
+      patientId,
       reason,
       urgency,
       status: 'DISPATCHED',
-      dispatchedBy: req.user.name || 'Eleanor Vance',
+      dispatchedBy: req.user.name || req.user.email,
     };
 
     res.json({
