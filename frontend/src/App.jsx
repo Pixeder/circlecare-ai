@@ -119,6 +119,14 @@ function MainApp() {
 }
 
 export default function App() {
+  // Log environment variables in production for debugging
+  if (import.meta.env.PROD) {
+    console.log('=== Production env vars ===');
+    console.log('API_BASE:', import.meta.env.VITE_API_BASE_URL);
+    console.log('Firebase API Key:', import.meta.env.VITE_FIREBASE_API_KEY);
+    console.log('Firebase Auth Domain:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
+  }
+  // existing code continues below {
   return (
     <BrowserRouter>
       <AuthProvider>
