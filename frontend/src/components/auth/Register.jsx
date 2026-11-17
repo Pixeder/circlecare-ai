@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { HeartPulse, Lock, Mail, User, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 
 export default function Register({ onSwitchToLogin }) {
-  const { register, authError } = useAuth();
+  const navigate = useNavigate();
+  const { register, authError, isAuthenticated } = useAuth();
+
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -12,9 +15,16 @@ export default function Register({ onSwitchToLogin }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // If already authenticated, redirect to dashboard
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password || !displayName) {
+    if (!email.trim() || !password || !displayName.trim()) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -32,7 +42,8 @@ export default function Register({ onSwitchToLogin }) {
     try {
       setLoading(true);
       setError(null);
-      await register(email, password, displayName, role);
+      await register(email.trim(), password, displayName.trim(), role);
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err.message || 'Registration failed.');
     } finally {
@@ -95,37 +106,7 @@ export default function Register({ onSwitchToLogin }) {
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
-              Role in Care Circle
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setRole('patient')}
-                className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                  role === 'patient'
-                    ? 'border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                Elderly Patient
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole('caregiver')}
-                className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
-                  role === 'caregiver'
-                    ? 'border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-500'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                Family Caregiver
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 Password
@@ -138,11 +119,10 @@ export default function Register({ onSwitchToLogin }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-3 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 bg-slate-50/50 text-slate-900 font-medium"
+                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 bg-slate-50/50 text-slate-900 font-medium"
                 />
               </div>
             </div>
-
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 Confirm
@@ -155,16 +135,50 @@ export default function Register({ onSwitchToLogin }) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-3 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 bg-slate-50/50 text-slate-900 font-medium"
+                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 bg-slate-50/50 text-slate-900 font-medium"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Role Selection */}
+          <div>
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+              Select Your Role
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole('patient')}
+                className={`p-3 rounded-xl border text-left transition ${
+                  role === 'patient'
+                    ? 'border-teal-600 bg-teal-50/70 ring-2 ring-teal-500/20'
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-xs font-bold text-slate-900 block">Elderly Patient</span>
+                <span className="text-[11px] text-slate-500">I am managing my own care</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRole('caregiver')}
+                className={`p-3 rounded-xl border text-left transition ${
+                  role === 'caregiver'
+                    ? 'border-cyan-600 bg-cyan-50/70 ring-2 ring-cyan-500/20'
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-xs font-bold text-slate-900 block">Family Caregiver</span>
+                <span className="text-[11px] text-slate-500">I care for an elderly loved one</span>
+              </button>
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-teal-600/20 transition flex items-center justify-center space-x-2 disabled:opacity-50"
+            className="w-full py-3 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-teal-600/20 transition flex items-center justify-center space-x-2 disabled:opacity-50 mt-2"
           >
             <span>{loading ? 'Creating Account...' : 'Complete Registration'}</span>
             <ArrowRight className="w-4 h-4" />
@@ -173,13 +187,19 @@ export default function Register({ onSwitchToLogin }) {
 
         <div className="mt-6 text-center text-xs text-slate-500">
           Already have an account?{' '}
-          <button
-            type="button"
-            onClick={onSwitchToLogin}
-            className="text-teal-600 font-bold hover:underline"
-          >
-            Sign In
-          </button>
+          {onSwitchToLogin ? (
+            <button
+              type="button"
+              onClick={onSwitchToLogin}
+              className="text-teal-600 font-bold hover:underline"
+            >
+              Sign In
+            </button>
+          ) : (
+            <Link to="/login" className="text-teal-600 font-bold hover:underline">
+              Sign In
+            </Link>
+          )}
         </div>
       </div>
     </div>

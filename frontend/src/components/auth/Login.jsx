@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { HeartPulse, Lock, Mail, ArrowRight, ShieldCheck, AlertCircle, Sparkles } from 'lucide-react';
 
 export default function Login({ onSwitchToRegister }) {
-  const { login, resetPassword, authError } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { login, resetPassword, authError, isAuthenticated } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -11,9 +15,17 @@ export default function Login({ onSwitchToRegister }) {
   const [resetSent, setResetSent] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
 
+  // If already authenticated, redirect to target or home
+  useEffect(() => {
+    if (isAuthenticated) {
+      const target = location.state?.from?.pathname || '/';
+      navigate(target, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
+    if (!email.trim() || !password) {
       setError('Please enter both your email address and password.');
       return;
     }
@@ -21,9 +33,11 @@ export default function Login({ onSwitchToRegister }) {
     try {
       setLoading(true);
       setError(null);
-      await login(email, password);
+      await login(email.trim(), password);
+      const target = location.state?.from?.pathname || '/';
+      navigate(target, { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed.');
+      setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -31,14 +45,14 @@ export default function Login({ onSwitchToRegister }) {
 
   const handleForgotPassword = async (e) => {
     e.preventDefault();
-    if (!email) {
+    if (!email.trim()) {
       setError('Please enter your email address to reset password.');
       return;
     }
 
     try {
       setLoading(true);
-      const res = await resetPassword(email);
+      await resetPassword(email.trim());
       setResetSent(true);
       setError(null);
     } catch (err) {
@@ -57,6 +71,8 @@ export default function Login({ onSwitchToRegister }) {
       } else {
         await login('sarah.vance@carecircle.health', 'CaregiverPass2026!');
       }
+      const target = location.state?.from?.pathname || '/';
+      navigate(target, { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -74,11 +90,11 @@ export default function Login({ onSwitchToRegister }) {
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">CareCircle AI</h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Agentic Elderly Healthcare & Caregiver Circle Platform
+            Agentic Elderly Healthcare Management Platform
           </p>
         </div>
 
-        {/* Error / Reset Banner */}
+        {/* Error Banner */}
         {(error || authError) && (
           <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -86,13 +102,14 @@ export default function Login({ onSwitchToRegister }) {
           </div>
         )}
 
+        {/* Password Reset Notice */}
         {resetSent && (
-          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold">
-            Password reset instructions dispatched to {email}.
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Password reset instructions sent. Please check your inbox.</span>
           </div>
         )}
 
-        {/* Login Form */}
         {!showForgot ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -196,16 +213,18 @@ export default function Login({ onSwitchToRegister }) {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              disabled={loading}
               onClick={() => handleDemoLogin('patient')}
-              className="p-2.5 bg-teal-50 hover:bg-teal-100 rounded-xl text-left border border-teal-200 transition"
+              className="p-2.5 bg-teal-50 hover:bg-teal-100 rounded-xl text-left border border-teal-200 transition disabled:opacity-50"
             >
               <span className="text-xs font-bold text-teal-900 block">Eleanor Vance</span>
               <span className="text-[10px] text-teal-700">Elderly Patient</span>
             </button>
             <button
               type="button"
+              disabled={loading}
               onClick={() => handleDemoLogin('caregiver')}
-              className="p-2.5 bg-cyan-50 hover:bg-cyan-100 rounded-xl text-left border border-cyan-200 transition"
+              className="p-2.5 bg-cyan-50 hover:bg-cyan-100 rounded-xl text-left border border-cyan-200 transition disabled:opacity-50"
             >
               <span className="text-xs font-bold text-cyan-900 block">Sarah Vance</span>
               <span className="text-[10px] text-cyan-700">Family Caregiver</span>
@@ -216,13 +235,19 @@ export default function Login({ onSwitchToRegister }) {
         {/* Switch to Register */}
         <div className="mt-6 text-center text-xs text-slate-500">
           Don't have an account?{' '}
-          <button
-            type="button"
-            onClick={onSwitchToRegister}
-            className="text-teal-600 font-bold hover:underline"
-          >
-            Create an Account
-          </button>
+          {onSwitchToRegister ? (
+            <button
+              type="button"
+              onClick={onSwitchToRegister}
+              className="text-teal-600 font-bold hover:underline"
+            >
+              Create an Account
+            </button>
+          ) : (
+            <Link to="/register" className="text-teal-600 font-bold hover:underline">
+              Create an Account
+            </Link>
+          )}
         </div>
       </div>
     </div>

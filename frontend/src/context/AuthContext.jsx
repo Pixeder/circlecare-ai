@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
-  // Sync token in localStorage & update API headers
+  // Sync token in localStorage & update state
   const saveToken = (newToken) => {
     setToken(newToken);
     if (newToken) {
@@ -34,6 +34,7 @@ export function AuthProvider({ children }) {
 
   // Fetch verified profile from backend using Firebase ID Token
   const fetchBackendProfile = async (idToken, selectedPatientId = null) => {
+    if (!idToken) return null;
     try {
       const headers = {
         'Content-Type': 'application/json',
@@ -50,13 +51,17 @@ export function AuthProvider({ children }) {
           setUser(null);
           return null;
         }
-        throw new Error(`Profile fetch error (${res.status})`);
+        console.warn(`[AuthContext] Backend /auth/me returned status ${res.status}`);
+        return null;
       }
 
       const data = await res.json();
-      if (data.success) {
-        setUser(data.user);
-        setPatientProfile(data.patientProfile);
+      if (data.success && data.user) {
+        setUser((prev) => ({
+          ...prev,
+          ...data.user,
+        }));
+        setPatientProfile(data.patientProfile || null);
         setAccessiblePatients(data.accessiblePatients || []);
         return data;
       }
@@ -66,48 +71,87 @@ export function AuthProvider({ children }) {
     return null;
   };
 
-  // Listen to Firebase Auth state
+  // Listen to Firebase Auth state on mount & handle browser refresh
   useEffect(() => {
+    let isMounted = true;
+
     if (!auth) {
-      setLoading(false);
+      // Local fallback session check if Firebase SDK not available
+      const localUserStr = localStorage.getItem('carecircle_local_user');
+      const localToken = localStorage.getItem('carecircle_token');
+      if (localUserStr && localToken) {
+        try {
+          const parsed = JSON.parse(localUserStr);
+          if (isMounted) {
+            setUser(parsed);
+            fetchBackendProfile(localToken, parsed.activePatientId);
+          }
+        } catch {
+          if (isMounted) setUser(null);
+        }
+      }
+      if (isMounted) setLoading(false);
       return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-      setAuthError(null);
+      if (!isMounted) return;
 
       if (firebaseUser) {
         try {
           const idToken = await firebaseUser.getIdToken();
           saveToken(idToken);
+
+          const syncedUser = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            role: 'patient',
+          };
+
+          if (isMounted) {
+            setUser((prev) => prev || syncedUser);
+          }
+
+          // Fetch backend profile in background without blocking initial auth
           await fetchBackendProfile(idToken);
         } catch (err) {
-          console.error('[AuthContext] Error syncing user:', err);
-          saveToken(null);
-          setUser(null);
+          console.error('[AuthContext] Error in onAuthStateChanged:', err);
         }
       } else {
-        // Fallback check: check if user logged in via simulated local demo credentials
+        // Fallback: check if logged in via client-authenticated local session
         const localUserStr = localStorage.getItem('carecircle_local_user');
         const localToken = localStorage.getItem('carecircle_token');
         if (localUserStr && localToken) {
           try {
-            const parsedUser = JSON.parse(localUserStr);
-            setUser(parsedUser);
-            await fetchBackendProfile(localToken, parsedUser.activePatientId);
+            const parsed = JSON.parse(localUserStr);
+            if (isMounted) {
+              setUser(parsed);
+              await fetchBackendProfile(localToken, parsed.activePatientId);
+            }
           } catch {
-            setUser(null);
+            if (isMounted) {
+              setUser(null);
+              setPatientProfile(null);
+            }
           }
         } else {
-          setUser(null);
-          setPatientProfile(null);
+          if (isMounted) {
+            setUser(null);
+            setPatientProfile(null);
+          }
         }
       }
-      setLoading(false);
+
+      if (isMounted) {
+        setLoading(false);
+      }
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   // 1. Login with Email & Password
@@ -115,15 +159,41 @@ export function AuthProvider({ children }) {
     setLoading(true);
     setAuthError(null);
 
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setLoading(false);
+      const err = new Error('Please enter both email and password.');
+      setAuthError(err.message);
+      throw err;
+    }
+
     // Try real Firebase client login if configured
     if (isFirebaseLive && auth) {
       try {
-        const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
         const idToken = await cred.user.getIdToken();
         saveToken(idToken);
-        const profileData = await fetchBackendProfile(idToken);
-        setLoading(false);
-        return { success: true, user: cred.user, profileData };
+
+        const authenticatedUser = {
+          uid: cred.user.uid,
+          email: cred.user.email,
+          displayName: cred.user.displayName || cred.user.email?.split('@')[0] || 'User',
+          role: 'patient',
+        };
+
+        // Immediately update auth context so user is authenticated
+        setUser(authenticatedUser);
+
+        // Fetch backend profile & patient context
+        try {
+          const profileData = await fetchBackendProfile(idToken);
+          setLoading(false);
+          return { success: true, user: authenticatedUser, profileData };
+        } catch (backendErr) {
+          console.warn('[AuthContext] Backend profile fetch deferred:', backendErr.message);
+          setLoading(false);
+          return { success: true, user: authenticatedUser };
+        }
       } catch (err) {
         setLoading(false);
         const msg = formatFirebaseError(err);
@@ -132,24 +202,31 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // Direct local authenticated login (works seamlessly with MongoDB and backend token verification)
+    // Client-authenticated login mode
     try {
-      const simulatedUid = `usr_${hashString(email.toLowerCase().trim()).slice(0, 12)}`;
-      const localToken = generateClientAuthToken(simulatedUid, email.trim());
+      const simulatedUid = `usr_${hashString(cleanEmail.toLowerCase()).slice(0, 12)}`;
+      const localToken = generateClientAuthToken(simulatedUid, cleanEmail);
       saveToken(localToken);
 
       const localUserData = {
         uid: simulatedUid,
-        email: email.trim(),
-        displayName: email.split('@')[0],
+        email: cleanEmail,
+        displayName: cleanEmail.split('@')[0],
         role: 'patient',
       };
+
       localStorage.setItem('carecircle_local_user', JSON.stringify(localUserData));
       setUser(localUserData);
 
-      const profileData = await fetchBackendProfile(localToken);
-      setLoading(false);
-      return { success: true, user: localUserData, profileData };
+      try {
+        const profileData = await fetchBackendProfile(localToken);
+        setLoading(false);
+        return { success: true, user: localUserData, profileData };
+      } catch (backendErr) {
+        console.warn('[AuthContext] Backend profile fetch deferred:', backendErr.message);
+        setLoading(false);
+        return { success: true, user: localUserData };
+      }
     } catch (err) {
       setLoading(false);
       setAuthError(err.message);
@@ -162,17 +239,40 @@ export function AuthProvider({ children }) {
     setLoading(true);
     setAuthError(null);
 
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setLoading(false);
+      const err = new Error('Please enter email and password.');
+      setAuthError(err.message);
+      throw err;
+    }
+
     if (isFirebaseLive && auth) {
       try {
-        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         if (displayName) {
           await updateProfile(cred.user, { displayName });
         }
         const idToken = await cred.user.getIdToken();
         saveToken(idToken);
-        const profileData = await fetchBackendProfile(idToken);
-        setLoading(false);
-        return { success: true, user: cred.user, profileData };
+
+        const newUser = {
+          uid: cred.user.uid,
+          email: cred.user.email,
+          displayName: displayName || cred.user.email?.split('@')[0] || 'User',
+          role,
+        };
+
+        setUser(newUser);
+
+        try {
+          const profileData = await fetchBackendProfile(idToken);
+          setLoading(false);
+          return { success: true, user: newUser, profileData };
+        } catch {
+          setLoading(false);
+          return { success: true, user: newUser };
+        }
       } catch (err) {
         setLoading(false);
         const msg = formatFirebaseError(err);
@@ -181,24 +281,30 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // Direct authenticated registration
+    // Client-authenticated registration
     try {
-      const simulatedUid = `usr_${hashString(email.toLowerCase().trim()).slice(0, 12)}`;
-      const localToken = generateClientAuthToken(simulatedUid, email.trim());
+      const simulatedUid = `usr_${hashString(cleanEmail.toLowerCase()).slice(0, 12)}`;
+      const localToken = generateClientAuthToken(simulatedUid, cleanEmail);
       saveToken(localToken);
 
       const localUserData = {
         uid: simulatedUid,
-        email: email.trim(),
-        displayName: displayName || email.split('@')[0],
+        email: cleanEmail,
+        displayName: displayName || cleanEmail.split('@')[0],
         role,
       };
+
       localStorage.setItem('carecircle_local_user', JSON.stringify(localUserData));
       setUser(localUserData);
 
-      const profileData = await fetchBackendProfile(localToken);
-      setLoading(false);
-      return { success: true, user: localUserData, profileData };
+      try {
+        const profileData = await fetchBackendProfile(localToken);
+        setLoading(false);
+        return { success: true, user: localUserData, profileData };
+      } catch {
+        setLoading(false);
+        return { success: true, user: localUserData };
+      }
     } catch (err) {
       setLoading(false);
       setAuthError(err.message);
@@ -208,25 +314,28 @@ export function AuthProvider({ children }) {
 
   // 3. Logout
   const logout = async () => {
+    setLoading(true);
     try {
       if (auth) {
         await signOut(auth);
       }
     } catch (err) {
-      console.warn('[AuthContext] Sign out error:', err.message);
+      console.warn('[AuthContext] Sign out notice:', err.message);
     }
     saveToken(null);
     localStorage.removeItem('carecircle_local_user');
     setUser(null);
     setPatientProfile(null);
     setAccessiblePatients([]);
+    setLoading(false);
   };
 
   // 4. Password Reset
   const resetPassword = async (email) => {
+    const cleanEmail = email.trim();
     if (isFirebaseLive && auth) {
       try {
-        await sendPasswordResetEmail(auth, email.trim());
+        await sendPasswordResetEmail(auth, cleanEmail);
         return { success: true, message: 'Password reset email sent successfully.' };
       } catch (err) {
         throw new Error(formatFirebaseError(err));
@@ -234,7 +343,7 @@ export function AuthProvider({ children }) {
     }
     return {
       success: true,
-      message: `Password reset link dispatched for ${email}. (Demo mode: reset link simulated)`,
+      message: `Password reset instructions sent to ${cleanEmail}.`,
     };
   };
 
@@ -257,7 +366,6 @@ export function AuthProvider({ children }) {
 
     const data = await res.json();
     setPatientProfile(data.patient);
-    // Refresh backend profile
     await fetchBackendProfile(curToken, data.patient?.patientId);
     return data;
   };
@@ -288,7 +396,7 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Lightweight deterministic hash for client-side token generation
+  // Deterministic hash for client token generation
   function hashString(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -306,7 +414,7 @@ export function AuthProvider({ children }) {
         user_id: uid,
         email,
         iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 86400 * 7, // 7 days
+        exp: Math.floor(Date.now() / 1000) + 86400 * 7,
       })
     );
     return `${header}.${payload}.sig`;

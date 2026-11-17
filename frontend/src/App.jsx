@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import Login from './components/auth/Login';
+import Register from './components/auth/Register';
 import Header from './components/Header';
 import Navigation from './components/Navigation';
 import OverviewDashboard from './components/OverviewDashboard';
@@ -26,7 +29,7 @@ function MainApp() {
     setRefreshTrigger((prev) => prev + 1);
   };
 
-  // If user has no patient profile yet, open onboarding modal
+  // If newly authenticated user has no patient profile yet, open onboarding modal
   const needsOnboarding = user && !patientProfile && !isOnboardingOpen;
 
   return (
@@ -103,7 +106,7 @@ function MainApp() {
 
       {/* Onboarding Modal for New Accounts */}
       <OnboardingModal
-        isOpen={isOnboardingOpen || needsOnboarding}
+        isOpen={isOnboardingOpen || Boolean(needsOnboarding)}
         onClose={() => setIsOnboardingOpen(false)}
       />
 
@@ -117,10 +120,23 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ProtectedRoute>
-        <MainApp />
-      </ProtectedRoute>
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <MainApp />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }

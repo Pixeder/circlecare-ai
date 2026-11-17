@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import Login from './Login';
-import Register from './Register';
 
 export default function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
-  const [authView, setAuthView] = useState('login'); // 'login' or 'register'
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -17,10 +16,7 @@ export default function ProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) {
-    if (authView === 'register') {
-      return <Register onSwitchToLogin={() => setAuthView('login')} />;
-    }
-    return <Login onSwitchToRegister={() => setAuthView('register')} />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return children;
