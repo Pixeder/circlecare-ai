@@ -16,10 +16,14 @@ export function getQdrantClient() {
   if (!QdrantClient) return null;
 
   try {
-    qdrantClientInstance = new QdrantClient({
+    const clientOptions = {
       url: config.qdrant.url,
       checkCompatibility: false,
-    });
+    };
+    if (config.qdrant.apiKey) {
+      clientOptions.apiKey = config.qdrant.apiKey;
+    }
+    qdrantClientInstance = new QdrantClient(clientOptions);
     return qdrantClientInstance;
   } catch (error) {
     console.warn(`[Qdrant] Client initialization warning: ${error.message}`);
